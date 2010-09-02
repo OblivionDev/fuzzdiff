@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import time
 import shlex
+import signal
 
 logfile = open('stats.log', 'a')
 
@@ -53,7 +54,7 @@ MANUALCUTOFF = 10
 # Shell scripts and some applications return non-standard exit codes when they are handled
 CRASHEXITCODES = [-11, -8, -6, -4, -1, 1, 129, 132, 134, 136, 139 ]
 
-# Time to wait before killing target program
+# Seconds to wait before killing target program
 WAIT = 1
 
 
@@ -118,6 +119,11 @@ def term(ret):
 		os.remove(TMPFILE)
 	finally:
 		sys.exit(ret)
+		
+def handler(signum, frame):
+	print 'Killing process...'
+	p.kill()
+	
 
 #######################
 # Program entry point #
@@ -171,8 +177,12 @@ except:
 	print '[*] Error running program'
 	term(-1)
 
-# Give the program some time to start...
-time.sleep(WAIT)
+# Set up timeout alarm
+signal.signal(signal.SIGALRM, handler)
+# Give extra time for the first invocation of the application
+signal.alarm(WAIT*2)
+p.wait()
+signal.alarm(0)
 
 # If it segfaulted, keep the changes
 print 'Checking status: ' + str(p.poll())
@@ -208,9 +218,11 @@ while (discardchance > 0.02):
 				print '[*] Error running program'
 				term(-1)
 	
-			# Give the program some time to start...
-			time.sleep(WAIT)
-	
+			# Set timeout alarm
+			signal.alarm(WAIT)
+			p.wait()
+			signal.alarm(0)	
+			
 			testexit = p.poll()
 			# If it segfaulted, keep the changes
 			print 'Checking status: ' + str(testexit)
@@ -233,10 +245,8 @@ while (discardchance > 0.02):
 	
 			# If the program hasn't terminated, kill it
 			elif(testexit == None):
-				print 'Terminating process...'
-				p.terminate()
+				print 'Killing process...'
 				p.kill()
-				os.waitpid(p.pid, os.WNOHANG)
 			attempts = attempts - 1
 			print 'Attempts left: ' + str(attempts)
 		if(manual_iteration > lastunchanged):
