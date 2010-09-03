@@ -57,6 +57,9 @@ CRASHEXITCODES = [-11, -8, -6, -4, -1, 1, 129, 132, 134, 136, 139 ]
 # Seconds to wait before killing target program
 WAIT = 1
 
+# If your target application is a shell script, killing the script can leave
+# child processes running.  If so, specify a process name to killall
+KILLALLNAME = ''
 
 def unfuzz(seed, fuzz, out):
 	global manual_iteration
@@ -119,11 +122,25 @@ def term(ret):
 		os.remove(TMPFILE)
 	finally:
 		sys.exit(ret)
-		
+
+def killall(processname, killsignal=signal.SIGKILL):
+	print 'Using internal killall...'
+	for folder in os.listdir("/proc"):
+		filename=os.path.join("/proc", folder, "cmdline")
+		if not os.access(filename, os.R_OK):
+			continue
+		exename=os.path.basename(file(filename).read().split("\x00")[0])
+		if exename!=processname:
+			continue
+		elif (exename.find(processname)==-1):
+			continue
+		os.kill(int(folder), killsignal)
+
 def handler(signum, frame):
 	print 'Killing process...'
 	p.kill()
-	
+	if(KILLALLNAME):
+		killall(KILLALLNAME)	
 
 #######################
 # Program entry point #
