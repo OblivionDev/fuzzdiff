@@ -39,11 +39,11 @@ logfile = open('stats.log', 'a')
 
 # Probability a fuzzed byte will be reverted
 # The higher this value, the more aggressive the testcase minimization will be
-REVERTCHANCE = .7
+REVERTCHANCE = .9
 
-# Number of iterations at each threshold
-# The higher this value, the more attempts this script will try to minimize
-ITER = 20
+# Number of iterations at first threshold
+# Each time the threshold decreases, the number of iterations will increase
+ITER = 2
 
 # Number of bytes different before switching to manual iteration
 # The higher this value, the greater chance of a definitive minimization,
@@ -62,7 +62,7 @@ WAIT = 1
 KILLALLNAME = ''
 
 def unfuzz(seed, fuzz, out):
-	global manual_iteration
+	global manual_iteration, origdiff
 	seedstat = os.stat(seed)
 	fuzzstat = os.stat(fuzz)
 
@@ -110,6 +110,9 @@ def unfuzz(seed, fuzz, out):
 					outfd.write(d)
 		else:
 			outfd.write(c)
+	# Get total number of different bytes between seed and fuzzed file:		
+	if(origdiff == 0):
+		origdiff = diff
 	if(lastunchanged<=MANUALCUTOFF):
 		# Increment current different byte counter
 		manual_iteration += 1
@@ -183,6 +186,9 @@ manual_iteration = 0
 minimizing = 0
 different_bytes = 0
 discardchance = REVERTCHANCE
+mainloopcount = 1
+finished = 0
+origdiff = 0
 
 # Check how the program crashes
 print '[*] Checking exit code for ' + str(fuzzed) + '...'
@@ -218,9 +224,10 @@ print 'Starting minimization with ' + str(ITER) + ' iterations with ' + \
 	str(discardchance*100) + '% chance of using byte values from seed file'
 
 # Main loop
-while (discardchance > 0.02):
-	while (attempts > 0):
-		
+while (discardchance > 0.02 and finished == 0):
+	attempts = ITER * (mainloopcount * mainloopcount)
+	attemptsreset = attempts
+	while (attempts > 0 and finished == 0):
 		(diff, unchanged) = unfuzz(seed, best, TMPFILE)
 		totaliterations = totaliterations + 1
 		# Only bother if we actually reduced the number of diffs
@@ -249,15 +256,14 @@ while (discardchance > 0.02):
 				print '[*] Reduced diffs from', diff, 'to', unchanged
 				minimizing = 1
 				lastunchanged = unchanged
-				print 'Resetting attempt counter to ' + str(ITER)
-				attempts = ITER
+				print 'Resetting attempt counter to ' + str(attemptsreset)
+				attempts = attemptsreset
 				if(unchanged <= MANUALCUTOFF and unchanged > 1):
 					manual_iteration=1 # begin manual iteration 
 					break
 				if(unchanged == 1):
 					print 'Made it to one byte difference!  Stopping'
-					attempts = 0
-					discardchance = 0
+					finished = 1					
 					break			
 	
 			# If the program hasn't terminated, kill it
@@ -268,14 +274,12 @@ while (discardchance > 0.02):
 			print 'Attempts left: ' + str(attempts)
 		if(manual_iteration > lastunchanged):
 			print '[*] Cannot minimize any further!'
-			attempts = 0
-			discardchance = 0
+			finished = 1
 			break
 	if(manual_iteration==0):
 		discardchance = discardchance - .1
 		print 'New percent chance of discarding changed bytes: ' + str(discardchance)
-		attempts = ITER
-	
+	mainloopcount += 1
 if(minimizing):
 	# Use count from last time the number of different bytes changed
 	different_bytes = lastunchanged
@@ -285,9 +289,9 @@ else:
 	logfile.write('Testcase unable to be minimized.\nPerhaps try higher ITER ' +  
 		'and lower discardchance values?')
 	print '[*] Testcase unable to be minimized.'
-print '[*] Minimally different file created. Bytes different: ' + str(different_bytes)
+print '[*] Minimally different file created. Reduced ' + str(origdiff) + ' bytes to ' + str(different_bytes)
 print 'Total iterations: ' + str(totaliterations)
-logfile.write(str(different_bytes) + ' bytes different after ' + str(totaliterations) + ' iterations\n' + 
+logfile.write('Minimized ' + str(origdiff) +' bytes to ' + str(different_bytes) + ' after ' + str(totaliterations) + ' iterations\n' + 
 	'revert chance: ' + str(REVERTCHANCE) + ' iterations: ' + str(ITER) + 
 	' manual threshold: ' + str(MANUALCUTOFF) + '\n\n')
 logfile.close()
