@@ -31,7 +31,6 @@ import os
 import random
 import shutil
 import subprocess
-import time
 import shlex
 import signal
 import tempfile
